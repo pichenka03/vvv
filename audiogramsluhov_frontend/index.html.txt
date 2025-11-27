@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>audiogramsluhov — Автоподбор слуховых аппаратов</title>
+  <style>
+    body{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:#f7fafc; margin:0; padding:20px;}
+    .container{max-width:980px;margin:0 auto;background:#fff;padding:20px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.08);}
+    input[type=text], input[type=file] {width:100%;padding:10px;margin:6px 0;border:1px solid #ddd;border-radius:6px;}
+    button{background:#2563eb;color:#fff;padding:10px 14px;border:none;border-radius:6px;cursor:pointer;}
+    pre{background:#111827;color:#fff;padding:12px;border-radius:6px;overflow:auto;}
+    .row{display:flex;gap:12px;}
+    .col{flex:1;}
+    footer{margin-top:18px;color:#6b7280;font-size:13px;}
+    a.small{font-size:13px;color:#2563eb;}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>audiogramsluhov — Автоподбор слуховых аппаратов</h1>
+    <p>Введите URL вашего backend (Render) — например: <code>https://vvv-g6nj.onrender.com</code></p>
+    <label>Backend URL</label>
+    <input id="backendUrl" type="text" placeholder="https://your-backend.onrender.com" value="https://vvv-g6nj.onrender.com" />
+    <div style="margin-top:8px;">
+      <label>Загрузите аудиограмму (PNG / JPG)</label>
+      <input id="fileInput" type="file" accept="image/*" />
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;">
+      <button id="analyzeBtn">Проанализировать и подобрать</button>
+      <button id="clearBtn" style="background:#6b7280">Очистить</button>
+      <!-- local file link (will work if frontend hosted on same machine where file exists) -->
+      <a id="catalogLink" class="small" href="file:///mnt/data/Технологии и модельный ряд audifon.pdf" target="_blank">Скачать Audifon каталог (локально)</a>
+    </div>
+
+    <h3>Извлечённые пороги</h3>
+    <pre id="thresholds">—</pre>
+
+    <h3>Подходящие модели</h3>
+    <pre id="matches">—</pre>
+
+    <footer>Подсказка: если backend развёрнут на Render, вставьте Public URL и нажмите «Проанализировать». Для поддержки отправки большого файла используйте современный браузер.</footer>
+  </div>
+
+  <script>
+    const backendInput = document.getElementById('backendUrl');
+    const fileInput = document.getElementById('fileInput');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const thresholdsPre = document.getElementById('thresholds');
+    const matchesPre = document.getElementById('matches');
+
+    analyzeBtn.onclick = async () => {
+      thresholdsPre.textContent = 'Выполняется...';
+      matchesPre.textContent = 'Ожидание...';
+      const url = backendInput.value.trim().replace(/\\/$/, '');
+      if (!url) return alert('Укажите backend URL.');
+      const file = fileInput.files[0];
+      if (!file) return alert('Загрузите изображение аудиограммы.');
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const imageData = reader.result; // dataURL
+          // POST /extract
+          const resp1 = await fetch(url + '/extract', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({image: imageData})
+          });
+          if (!resp1.ok) {
+            const text = await resp1.text();
+            thresholdsPre.textContent = 'Ошибка /extract: ' + resp1.status + ' ' + text;
+            matchesPre.textContent = '—';
+            return;
+          }
+          const extracted = await resp1.json();
+          thresholdsPre.textContent = JSON.stringify(extracted, null, 2);
+
+          // POST /match
+          const resp2 = await fetch(url + '/match', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({thresholds: extracted})
+          });
+          if (!resp2.ok) {
+            const text = await resp2.text();
+            matchesPre.textContent = 'Ошибка /match: ' + resp2.status + ' ' + text;
+            return;
+          }
+          const matches = await resp2.json();
+          matchesPre.textContent = JSON.stringify(matches, null, 2);
+        } catch (e) {
+          thresholdsPre.textContent = 'Ошибка: ' + e.message;
+          matchesPre.textContent = '—';
+        }
+      };
+      reader.readAsDataURL(file);
+    };
+
+    clearBtn.onclick = () => {
+      fileInput.value = '';
+      thresholdsPre.textContent = '—';
+      matchesPre.textContent = '—';
+    };
+  </script>
+</body>
+</html>
